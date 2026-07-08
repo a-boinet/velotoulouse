@@ -1,6 +1,7 @@
-BASE_URL = "https://api.cyclocity.fr/contracts/toulouse/gbfs/v3"
-DEFAULT_GBFS_FEED_TTL = 3600
-DEFAULT_STATION_STATUS_TTL = 2  # In seconds
+GBFS_FEEDS_URL = "https://api.cyclocity.fr/contracts/toulouse/gbfs/v3/gbfs.json"
 
+SUPPORTED_LANGUAGES = {"fr", "en", "es"}  # TODO Fetch it from https://api.cyclocity.fr/contracts/toulouse/gbfs/v3/system_information.json instead
+
+DEFAULT_RETRIES = 3
 
 from .client import VeloToulouseClient
