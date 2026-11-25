@@ -14,7 +14,7 @@ from velotoulouse.exceptions import APIError, InvalidFeedError
 class Feed:
     url: str
     ttl: int = 0
-    latest_update: datetime = None
+    latest_update: datetime | None = None
     data: dict = field(default_factory=dict)
 
 

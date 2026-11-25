@@ -9,7 +9,7 @@ class Station:
     latitude: float
     longitude: float
     address: str
-    rental_methods: list
+    rental_methods: list[str]
     capacity: int
     bikes_available: int
     bikes_disabled: int
@@ -17,6 +17,7 @@ class Station:
     docks_disabled: int
     mechanical_bikes: int
     electrical_bikes: int
+    is_installed: bool
     is_renting: bool
     is_returning: bool
     last_reported: datetime

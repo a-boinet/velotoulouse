@@ -62,34 +62,49 @@ class VeloToulouseClient:
         station_information = station_information_indexes[station_id]
         station_status = station_status_indexes[station_id]
 
-        station_name = station_information["name"][0]["text"]  # Default language (fallback if target language is unavailable)
-        for name_dict in station_information["name"][1:]:
-            if name_dict["language"] == self.language:
-                station_name = name_dict["text"]
+        # Use the name in the target language, falling back to the first (default) one
+        names = station_information.get("name") or []
+        station_name = next(
+            (
+                name_dict["text"]
+                for name_dict in names
+                if name_dict.get("language") == self.language
+            ),
+            names[0]["text"] if names else "",
+        )
 
         vehicle_counts = {
             vehicle_type["vehicle_type_id"]: vehicle_type["count"]
-            for vehicle_type in station_status["vehicle_types_available"]
+            for vehicle_type in station_status.get("vehicle_types_available", [])
         }
+
+        last_updated = self._parse_datetime(station_status["last_updated"])
+        _last_reported = station_status.get("last_reported")
+        last_reported = self._parse_datetime(_last_reported) if _last_reported else last_updated
         return {
             "id": station_information["station_id"],
             "name": station_name,
             "latitude": station_information["lat"],
             "longitude": station_information["lon"],
-            "address": station_information["address"],
+            "address": station_information.get("address", ""),
             "rental_methods": station_information.get("rental_methods", []),
             "capacity": station_information["capacity"],
-            "bikes_available": station_status["num_vehicles_available"],
-            "bikes_disabled": station_status["num_vehicles_disabled"],
-            "docks_available": station_status["num_docks_available"],
-            "docks_disabled": station_status["num_docks_disabled"],
+            "bikes_available": station_status.get("num_vehicles_available", 0),
+            "bikes_disabled": station_status.get("num_vehicles_disabled", 0),
+            "docks_available": station_status.get("num_docks_available", 0),
+            "docks_disabled": station_status.get("num_docks_disabled", 0),
             "mechanical_bikes": vehicle_counts.get("mechanical", 0),
             "electrical_bikes": vehicle_counts.get("electrical", 0),
-            "is_renting": station_status["is_renting"],
-            "is_returning": station_status["is_returning"],
-            "last_reported": datetime.fromisoformat(station_status["last_reported"].replace("Z", "+00:00")),
-            "last_updated": datetime.fromisoformat(station_status["last_updated"].replace("Z", "+00:00")),
+            "is_installed": station_status.get("is_installed", False),
+            "is_renting": station_status.get("is_renting", False),
+            "is_returning": station_status.get("is_returning", False),
+            "last_reported": last_reported,
+            "last_updated": last_updated,
         }
+
+    @staticmethod
+    def _parse_datetime(value: str) -> datetime:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
     def _build_station(
         self,
@@ -111,11 +126,14 @@ class VeloToulouseClient:
         station_information_indexes: dict,
         station_status_indexes: dict
     ):
-        merged_info_and_status = self._parse_station_data(
-            station.id, station_information_indexes, station_status_indexes
-        )
-        if station.id != merged_info_and_status["id"]:
-            raise StationNotFoundError(station.id)
+        try:
+            merged_info_and_status = self._parse_station_data(
+                station.id, station_information_indexes, station_status_indexes
+            )
+        except StationNotFoundError:
+            # The station was removed from the API, drop it from the cache
+            self._stations.pop(station.id, None)
+            raise
 
         merged_info_and_status.pop("id")  # Don't refresh the id
         for key, value in merged_info_and_status.items():
@@ -136,7 +154,7 @@ class VeloToulouseClient:
             # We already cached this station, let's just refresh its information
             station = self._stations[station_id]
             self._update_station(station, station_information_indexes, station_status_indexes)
-            return self._stations[station_id]
+            return station
 
         # That's the first time we're asked about this station, so let's cache it
         station = self._build_station(station_id, station_information_indexes, station_status_indexes)
@@ -149,6 +167,10 @@ class VeloToulouseClient:
         :return: A list of Station objects
         """
         station_information_indexes, station_status_indexes = self._get_station_indexes()
+
+        # Drop cached stations that are no longer listed by the API
+        for station_id in self._stations.keys() - station_information_indexes.keys():
+            del self._stations[station_id]
 
         for station_id in station_information_indexes.keys():
             if station_id not in station_status_indexes:
